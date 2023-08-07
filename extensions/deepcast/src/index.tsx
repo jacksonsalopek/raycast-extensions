@@ -1,6 +1,7 @@
-import { Form, ActionPanel, Action, showToast, Toast, Icon } from "@raycast/api";
+import { Form, ActionPanel, Action, showToast, Toast, Icon, LaunchProps } from "@raycast/api";
 import { useState } from "react";
 import { SourceLanguage, TargetLanguage, sendTranslateRequest, source_languages, target_languages } from "./utils";
+import TranslationView from "./components/TranslationView";
 
 interface Values {
   key?: string;
@@ -21,18 +22,24 @@ function SwitchLanguagesAction(props: { onSwitchLanguages: () => void }) {
   );
 }
 
-const Command = () => {
+const Command = (props: LaunchProps) => {
+  // Check whether component is called with an existing value for translation
+  if (props?.launchContext?.translation) {
+    return <TranslationView {...props} />;
+  }
+
   const [loading, setLoading] = useState(false);
   const [sourceText, setSourceText] = useState("");
   const [translation, setTranslation] = useState("");
   const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage | "">("");
   const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>("EN-US");
+  const [detectedSourceLanguage, setDetectedSourceLanguage] = useState<SourceLanguage>();
 
   const submit = async (values: Values) => {
     if (!values.text || !values.to) return;
     setLoading(true);
 
-    const translation = await sendTranslateRequest({
+    const response = await sendTranslateRequest({
       text: values.text,
       targetLanguage: values.to,
       sourceLanguage: values.from && values.from.length > 0 ? values.from : undefined,
@@ -40,14 +47,17 @@ const Command = () => {
 
     setLoading(false);
 
-    if (!translation) return;
+    if (!response) return;
+
+    const { translation, detectedSourceLanguage } = response;
 
     setTranslation(translation);
+    setDetectedSourceLanguage(detectedSourceLanguage);
   };
 
   const switchLanguages = async () => {
-    // No action if the source language is not set ("Detect" by default)
-    if (sourceLanguage === "") {
+    // No action if the source language is not set ("Detect" by default) and we don't have a detected source language
+    if (sourceLanguage === "" && !detectedSourceLanguage) {
       await showToast(
         Toast.Style.Failure,
         "Source language not set",
@@ -60,7 +70,7 @@ const Command = () => {
     const newSourceValue = targetLanguage.slice(0, 2) as SourceLanguage;
     // Picking the first occurrence of a target language that starts with the source language (always 2 chars)
     const newTargetValue = Object.keys(target_languages).find((key) =>
-      key.startsWith(sourceLanguage)
+      key.startsWith(detectedSourceLanguage || sourceLanguage)
     ) as TargetLanguage;
 
     if (newTargetValue != undefined) {
